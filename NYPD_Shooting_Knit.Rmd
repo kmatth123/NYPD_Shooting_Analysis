@@ -1,0 +1,130 @@
+---
+title: "NYPD_Shooting_Analysis"
+author: "Kellie Matthews"
+date: "6/20/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Libraries Needed for analysis
+
+```{r libraries, message=FALSE}
+library(tidyverse)
+library(lubridate)
+library(dplyr)
+library(ggplot2)
+```
+
+## Document Summary
+In the following document I analyze NYPD Shooting Incident Data. This data set includes shooting incidents in New York City where each row contains information for a single victim. Each incident can have one or more victim allowing for duplicate INCIDENT_KEYS. Some information about each incident includes the location as well as demographics for those involved.
+
+I will show the total number of shooting incidents per borough and if they resulted in the victim's death. I will also show the trend of shooting incidents from 2006 to 2020. Finally, I will show a model to predict the number of incidents versus the median annual household income per borough. A further description of the median annual household income data will be provided later in the document.
+
+These visualizations will allow us to answer the following: 
+
+Which boroughs experience the most shooting incidents?
+
+How are the amount of shooting incidents trending over time?
+
+How does income correlate to the number of shooting incidents?
+
+## Reading in the NYPD Shooting Data Set
+Read in the NYPD Shooting data set and display the column names.
+
+```{r get_NYPD_data}
+url_in <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+shooting_data <- read_csv(url_in)
+```
+
+## Cleaning the Data
+Make OCCUR_DATE a date type.
+
+
+I don't plan on doing an exact location analysis so I will delete the following columns:
+
+LOCATION_DESC, Lon_Lat, X_COORD_CD, Y_COORD_CD
+```{r summary}
+shooting_data$OCCUR_DATE <- mdy(shooting_data$OCCUR_DATE)
+shooting_data <- subset(shooting_data, select = -c(LOCATION_DESC,X_COORD_CD, Y_COORD_CD, Lon_Lat))
+summary(shooting_data)
+```
+
+## Manipulating and Grouping the Data
+Here I will group the data by borough and if the incident resulted in a murder. Then I will sum the number of victims per category.
+
+```{r grp_by_boro}
+incident_by_boro <- shooting_data %>%
+group_by(BORO, STATISTICAL_MURDER_FLAG) %>%
+summarise(num_vic = n())
+incident_by_boro
+```
+
+Here I will group the data by year and sum the number of shooting victims per year.
+
+```{r grp_by_year}
+grp_by_year <- shooting_data %>%
+group_by(year=format(OCCUR_DATE, "%Y")) %>%
+summarise(num_vic=n())
+grp_by_year
+```
+
+
+## Plots
+This plot shows the disparity between total victims in each borough. We can conclude that outside factors play a role in the differences here.
+
+```{r plot_1, echo=FALSE}
+ggplot(data=incident_by_boro, aes(x=BORO, y=num_vic, fill=STATISTICAL_MURDER_FLAG))+
+geom_bar(stat="identity")+
+geom_text(aes(label=num_vic), vjust=-0.3, size=3.5)+
+labs(x="Boroughs", y="Number of Shooting Incidents", title="Number of Shooting Incidents per Borough") +
+scale_fill_discrete(name="Victim Survival",labels=c("Survived", "Died"))+
+theme_minimal()
+```
+
+This plot shows a general downward trend in the number of shooting incidents per year. In 2020 there was a large spike upwards. We can conclude that external factors played a role in this data jump. Since a global pandemic began in 2020, further analysis of this data would require an analysis into covid-19 data as well.
+
+```{r plot_2, echo=FALSE}
+ggplot(data=grp_by_year, aes(x=year,y=num_vic, group=1))+
+  geom_line()+
+  geom_point()+
+labs(x="Year", y="Number of Shooting Incidents", title="Number of Shooting Incidents per Year")+
+  theme_minimal()
+
+```
+
+## Model
+In this section I construct a model to predict the number of incidents in each borough based on the median annual household income. This data is from the 2019 census and can be found at https://www.census.gov/quickfacts/fact/table/newyorkcountymanhattanboroughnewyork,bronxcountybronxboroughnewyork,queenscountyqueensboroughnewyork,kingscountybrooklynboroughnewyork,richmondcountystatenislandboroughnewyork,newyorkcitynewyork/HSG010219
+
+The median annual household incomes for Manhattan, Bronx, Queens, Brooklyn, and Staten Island are $86,553, $40,088, $68,666, $60,231, and $82,783, respectively.
+
+```{r income}
+incident_vs_income<- shooting_data %>%
+group_by(BORO) %>%
+summarise(num_vic = n())
+
+incident_vs_income$median_income <- c(40088,60231,86553,68666,82783)
+incident_vs_income
+```
+```{r income_model}
+mod <- lm(num_vic ~ median_income, data=incident_vs_income)
+predicted_num_vics <- incident_vs_income %>% mutate(pred=predict(mod))
+```
+```{r model_plot, echo=FALSE}
+ggplot(data=predicted_num_vics,)+
+  geom_point(aes(x=BORO, y=num_vic, color="Actual"),size = 5)+
+  geom_point(aes(x=BORO, y=pred, color="Predicted"),size = 5)+
+labs(x="Boroughs", y="Number of Shooting Incidents", title="Number of Shooting Incidents per Borough Based on Household Income")+
+  theme(legend.title = element_blank())
+
+```
+
+The model shows that median income is generally a good predictor on if a borough will experience more or less shooting incidents than the other boroughs. Manhattan and Staten Island had the highest incomes and the lest amount of shooting incidents. The Bronx and Brooklyn have the lowest average income and the highest number of shooting incidents.
+
+## Conclusion
+From the visualizations and model, we can conclude that the number of shooting incidents in each borough correlates to the median household income. We can also conclude that an outside event in 2020 caused the large jump in the downward trend in the number of incidents.
+
+A possible source of bias is that I have never been to New York so the opinion I've formed about each of the boroughs is based primarily on the news and on movies. This gave me a personal bias on which boroughs I thought of as nicer and more affluent. I mitigated this bias by integrating census data to make sure the results were true.
